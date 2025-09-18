@@ -1,0 +1,174 @@
+---
+title: "USArrests"
+author: "Gale, Amanda"
+date: "2025-09-16"
+output: html_document
+---
+
+# Task I
+```{r}
+df <- USArrests
+```
+
+
+```{r}
+str(df)
+```
+
+## Find Outliers
+```{r}
+av.murders <- mean(df$Murder)
+sd.murders <- sd(df$Murder)
+ind <- which((df$Murder > 1.5*sd.murders + av.murders) | 
+               (df$Murder < av.murders - 1.5*sd.murders)) 
+print("outlier states:" + df[ind,0])
+```
+
+
+## Evaluate Normality
+```{r}
+shapiro.test(df$Murder)
+shapiro.test(df$UrbanPop)
+```
+
+```{r}
+qqnorm(df$Murder)
+qqline(df$Murder)
+```
+
+
+```{r}
+qqnorm(df$UrbanPop)
+qqline(df$UrbanPop)
+```
+
+## Evaluate Correlation of Murders vs Population
+```{r}
+# based on assumption of normality, pearson test
+cor(df$UrbanPop, df$Murder)
+```
+
+```{r}
+plot(df$UrbanPop, df$Murder)
+```
+
+Based on the Pearson Correlation test value of close to 0 and the visual results of the plot, we can conclude that murder rates are not correlationed to urban population.
+
+
+# Task II
+Based on the data on the growth of mobile phone use in Brazil (you’ll need to copy the data and create a CSV that you can load into R or use the gsheet2tbl() function from the gsheet package), forecast phone use for the next time period using a 2-year weighted moving average (with weights of 5 for the most recent year, and 2 for other), exponential smoothing (alpha of 0.4), and linear regression trendline.
+
+```{r}
+library(gsheet)
+library(forecast)
+
+url <- "https://docs.google.com/spreadsheets/d/1tOnM9XceK4Ak8tzWQ2vDelWlJexzJiS3LbT6MN6_rW0/edit?usp=sharing"
+df <- read.csv(text=gsheet2text(url, format='csv'), 
+               stringsAsFactors=FALSE,
+               encoding = "UTF-8")
+```
+
+### Visualize Data
+```{r}
+plot(df$Subscribers)
+```
+
+## Predict Month 12 Subscribers
+
+### WMA
+```{r}
+weights <- c(2,5)
+wma <- TTR::WMA(df$Subscribers[1:11], n=length(weights), wts=weights)
+wma.forecast <- round(sum(wma[c(10,11)] * weights)/7)
+wma.forecast
+wma[12] <- wma.forecast
+wma <- c(NA, wma)
+wma
+```
+
+### SES
+```{r}
+# manually creating the loop
+a <- 0.4
+df$Ft <- 0
+df$E <- 0
+
+df$Ft[1] <- df$Subscribers[1]
+df$E[1] <- 0
+
+for (i in 2:nrow(df)) {
+  df$Ft[i] <- df$Ft[i-1] + a*df$E[i-1]
+  df$E[i] <- df[i,2]  - df$Ft[i] 
+}
+
+ses.forecast <- round(df$Ft[12])
+ses.forecast
+```
+
+```{r}
+# built in function 
+df.ts <- ts(df$Subscribers,
+            start = 1,
+            frequency = 12)
+
+ses.model <- HoltWinters(df.ts[1:11],
+                         alpha=0.4,
+                         beta=F,
+                         gamma=F)
+
+ses.forecast2 <- forecast(ses.model, h=1)
+ses.forecast2[4]
+```
+
+### Linear Regression
+```{r}
+lm.model <- lm(df$Subscribers~df$Year)
+
+# calculation over time using predict() function
+lm.forecast <- predict(lm.model, newdata=data.frame(period=12))
+
+lm.forecast[12]
+
+# manual calculation using coefficients
+lm.trendline <- function(x) {
+  lm.model$coefficients[2]*x + lm.model$coefficients[1]
+}
+
+lm.trendline(12)
+
+plot(lm.trendline(seq(1:12)))
+```
+
+
+## MSE Calculations
+Subtract predicted subscribers from actual for each model.
+
+```{r}
+df.mse <- data.frame(
+ WMA=0,
+ SES=0,
+ LinReg=0
+  )
+# WMA
+df$wma.error <- df$Subscribers - wma
+df.mse$WMA <- mean(df$wma.error^2, na.rm = TRUE)
+
+# SES
+df$ses.error <- df$Subscribers - df$Ft
+df.mse$SES <- mean(df$ses.error^2, na.rm = TRUE)
+
+# LM
+df$lm.error <- df$Subscribers - lm.forecast
+df.mse$LinReg <- mean(df$lm.error^2, na.rm = TRUE)
+
+df.mse
+```
+
+
+
+```{r}
+
+```
+
+
+
