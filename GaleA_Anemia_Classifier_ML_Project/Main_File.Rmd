@@ -1,0 +1,407 @@
+---
+title: "Ensemble Model to Predict Anemia Diagnosis"
+subtitle: "DA5030"
+author: "Gale, Amanda"
+date: "Fall 2025"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true 
+---
+<br />
+<hr />
+<br />
+
+
+## Introduction
+
+My pipeline is designed to create a SQL database within which it saves data obtained from a URL, then rendering a separate R notebook designed to pre-process the data and update the SQL database with the cleaned copy, and finally obtaining the cleaned data set and building predictive models from there. The classification models are designed to predict the diagnosis of patients who are either healthy or suffer from one of eight different types of anemia. Models utilized in this notebook include support vector classifier, random forest, artificial neural network, and a manually constructed heterogeneous ensemble incorporating all three models. These model types were chosen for their compatibility with naturally standardized data such as blood cell counts and their suitability for large multi-class classification problems. Random forest offers interpretability which the other models, as black box algorithms, lack which is a common requirement for healthcare problems.
+
+### Create the Project Environment
+```{r loadPackages, echo=F}
+library(reticulate)
+library(RSQLite)
+```
+
+A virtual environment has been created within this project folder within which all necessary Python libraries have been installed. These imports extend to the entire project environment, meaning that they do not need to be imported again by other files within the pipeline. Here, I am creating a virtual environment within this directory, telling the program to use that virtual environment, and downloading all necessary Python libraries within. Of all the AI assistance and forum browsing done for this project, most of it was for this part. 
+```{r createVenv, message=F, warning=F, results='hide'}
+# tell reticulate not to auto-generate an external venv
+Sys.setenv(RETICULATE_AUTOCONFIGURE = "FALSE")
+
+# create virtual environment
+virtualenv_create("./.venv")
+
+# require venv
+use_virtualenv("./.venv", required = TRUE)
+
+# required Python libraries
+required_py_packages <- c("numpy", "pandas", "scikit-learn", "matplotlib", "tabulate", "scipy")
+
+# will check for packages before installing
+virtualenv_install("./.venv", required_py_packages)
+```
+
+```{python importPkgs, echo=F}
+import numpy as np
+import pandas as pd
+import sqlite3
+import matplotlib.pyplot as plt
+from tabulate import tabulate
+from scipy import stats
+from sklearn.svm import SVC
+from sklearn.model_selection import StratifiedKFold, train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, f1_score
+from sklearn.neural_network import MLPClassifier
+```
+
+### Generate the Data Set 
+Here, I retrieved the data from a URL and saved it as a Pandas data frame.
+```{python getData}
+url = "https://raw.githubusercontent.com/Xylazine/DataFiles/refs/heads/main/anemia_data.csv"
+df = pd.read_csv(url)
+df = df.drop(df.columns[0], axis=1)   # delete the indexing column
+```
+Here, I created a SQL database within the project folder and saved the data as a table to be accessed by other files in the pipeline.
+```{python createDB, message=F, results='hide'}
+con = sqlite3.connect("anemia_project.db")
+df.to_sql('anemia_data', con, if_exists='replace', index=False)
+con.close()
+```
+
+### Clean Data
+This is where the rendering of the pre-processing notebook in the pipeline takes place, **data_prep.Rmd**. This notebook will create a clean copy of the data set. I found that visualizing the raw data was not very fruitful but that the models performed very well on it, as their performance is dependent on hyperparameter tuning for this particular data set and the data is not particularly messy, per the nature of blood testing being highly standardized. So rather than replace the data set in the database with a highly processed version for demonstrative purposes, I instructed the notebook to create a second copy for visualization while models will be built from the raw data.   
+Another approach to this pipeline could have been to simply call functions stored within a *.r* or *.py* file to modify a local copy of the data. However, in the interest of providing a full explanation of data shaping, I have made the data cleaning process into its own .Rmd file that can be viewed separately from this notebook. The pipeline used here would be a good approach for very messy data sets that require thorough pre-processing or when building an ensemble where each model requires distinctly shaped data that can be rendered in their own separate .Rmd files. Here, I use only one pre-processing file for all of my data since my models accept very similarly shaped data.  
+```{r renderDataCleaner, results='hide', message=FALSE}
+# render data cleaning notebook
+rmarkdown::render("data_prep.Rmd")
+```
+
+```{python retrieveData}
+# retrieve processed data set from database
+con = sqlite3.connect('anemia_project.db')
+df_clean = pd.read_sql('SELECT * FROM clean_anemia_data', con)
+con.close()
+```
+
+
+## Evaluate Data
+We can view the distribution of anemia diagnoses. There is a wide class imbalance that might be addressed with SMOTE in another data set. However, this is not an option in this data set as some classes are incredibly rare. Half of the classes are distributed at or below 5% of the data. The data set is already small so it is not feasible to artificially balance this data. However, I will stratify the partitions to ensure that all classes are present at every step of the training and validation process.
+```{python DiagnosicBreakdown, echo=F}
+# Claude-derived code
+print("\nDiagnosis Class Distribution:")
+print(pd.Series(df_clean.Diagnosis).value_counts(normalize=True))
+```
+
+### Visualize Blood Counts by Class
+We can visualize the blood counts by diagnosis to get an idea of which cell types correspond to each class of anemia. Visualization is carried out on a data set absolved of extreme outliers. These outliers  frequently forced every other value belonging to its class into a single bin, rendering it difficult to gain useful insight from visual exploration. Some of this effect is still present even after omitting outliers, such as in the Hematocrit (HCT) count.   
+Blood counts among diagnostic class do not appear to be normally distributed for most cell types. Some disease states (Healthy, Normocyctic Normochromic Anemia) carry most of its predictors within a single bin across cell types, giving clear criteria for diagnosis. For the remainder of classes, it is difficult to Identify a "smoking gun" as to which cell type will be the primary predictor of these disease state. It likely be a subtle combination of different factors that determine diagnosis, difficult to see with the human eye but more apparent to our modeling algorithms. Visually, Hemoglobin (HGB) looks like a good candidate for a primary predictor, with a distinct distribution for each disease class despite much overlap, as does Platelets (PLT).
+```{python Visualize1, echo=F}
+diagnoses = df.Diagnosis.unique()
+for i in range(len(df.columns[0:-2])):
+  label = df.columns[i]
+  for d in diagnoses:
+    plt.hist(df[df['Diagnosis']==d][label], label=d)
+  plt.title(label)
+  plt.ylabel("Number of Patients")
+  plt.xlabel("Cell Count")
+  plt.legend()
+  plt.show(block=False)
+  plt.clf()
+plt.close('all')
+```
+
+
+## Partition Training and Testing Data
+ScikitLearn is a powerful and very popular machine learning library within Python. I will use this single library to build all three of my models. It requires the target variable to be separated from all predictive features, so that is where I will begin in making my training and testing data sets.
+```{python Partition1}
+X = df.iloc[:,0:-1]   # predictor columns
+y = df.iloc[:,-1]   # target column
+```
+Since I am building a heterogeneous ensemble, it will be convenient to train all three models on the same data set, with a small caveat for ANN that will be seen later. I will partition my data then scale to prevent data leakage caused by scaling with the testing data included. this scaling is necessary for SVC because it is a distance-based model and ANN because of its back-calculation process to apply universal weights to each node in the model, shared by all features. Random forest is robust enough to handle the scaling of data required for ANN and SVM.
+```{python Partition3}
+# partition training and testing data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=123, stratify=y)
+# create a scale object for svm and neural network
+SS = StandardScaler()
+SS.fit(X_train);
+X_train = SS.transform(X_train)    # scale training data
+X_test = SS.transform(X_test)    # scale testing data
+kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)   # for cross-validation
+```
+
+
+## Model Building
+The workflow for building and tuning models is as such:
+
+1. A base score of the model is displayed based on the default parameters.
+2. Hyperparameters are tuned using bagging with F1 score as the performance metric. 
+3. Hyperparameter boundaries are adjusted until the final model settles somewhere in the center of the given values. This full process is possible to display here but has been cut down for the sake of minimizing run time of the program.
+4. A final model is built using what is determined to be the optimal hyperparameters. 
+5. The model is tested on unseen data and new statistics are displayed.   
+
+
+### Support Vector Classifier  
+Support vector machine, or more specifically, support vector classifier, is a supervised machine learning algorithm designed to find a plane in space that most effectively divides classes of the target feature. These planes are optimized according to kernel functions, making mapping into higher dimensional planes possible. This is one hyperparameter we will optimize. The margin of the plane can also be optimized in a trade-off between achieving greater division at the cost of misclassifying certain data points. This is controlled by C, another hyperparameter we will tune, where a smaller C produces a wider margin but tolerates misclassification while a larger C leads to stricter classification but risks overfitting. The last hyperparameter, gamma, controls how highly a single training example may influence the model where the value of gamma is inversely proportional to its influence. 
+```{python SVC_Base}
+svc_model = SVC()
+svc_model.fit(X_train, y_train);
+y_pred = svc_model.predict(X_test)
+base_f1 = round(f1_score(y_test, y_pred, average='weighted'), 3)
+print("SVC model F1 before tuning: ", base_f1)
+```
+
+```{python SVC_Tune}
+Cs = [10, 100, 200]
+gammas = ['scale', 0.01, .1, 1]
+kernels = ['rbf', 'linear']
+
+best_C = 1.0
+best_gamma = 'scale'
+best_kernel = 'rbf'
+best_f1 = base_f1
+
+for c in Cs:
+  for g in gammas:
+    for k in kernels:
+      model = SVC(C=c, gamma=g, kernel=k)
+      f1s = cross_val_score(model, X_train, y_train, cv=kf, scoring="f1_weighted")
+      mean_f1 = round(np.mean(f1s), 3)
+      if mean_f1 >= best_f1:
+        best_f1 = mean_f1
+        best_C = c
+        best_gamma = g
+        best_kernel = k
+```
+
+```{python SVC_Build, echo=F}
+svc_mean_f1 = best_f1    # holdout method mean F1 score
+
+# build and evaluate final model
+svc_model = SVC(C=best_C, gamma=best_gamma, kernel=best_kernel)
+
+svc_model.fit(X_train, y_train);
+svc_pred = svc_model.predict(X_test)
+svc_score = round(svc_model.score(X_test, y_test), 3)
+print("SVC model after tuning:", "\nBest score: ", svc_score, "\nBest F1 w/ holdout: ", svc_mean_f1, 
+"\nBest C: ", best_C, "\nBest gamma: ", best_gamma, "\nBest kernel: ", best_kernel)
+```
+
+```{python SVC_Stats, echo=F}
+# produce stats for SVM model
+print("SVC Model Classification Report: \n", classification_report(y_test, svc_pred))
+```
+
+
+### Random Forest 
+Random Forest is an ensemble learning algorithm that constructs multiple decision trees during training and outputs the mode of their individual predictions for classification tasks. The algorithm's performance is influenced by several key hyperparameters that control both the complexity of individual trees and the diversity of the forest. The hyperparameters tuned in this loop include number of estimators, specifying the number of decision trees in the forest, minimum sample splits, determining the minimum number of samples required to split an internal node, and minimum sample leaves, sets the minimum number of samples that must be present in a leaf node. Other hyperparameters that reliably optimized to their default values were left out of the tuning process shown here in an effort to reduce the run time of the program.
+```{python RF_Base}
+rf_model = RandomForestClassifier()
+rf_model.fit(X_train, y_train);
+y_pred = rf_model.predict(X_test)
+base_f1 = round(f1_score(y_test, y_pred, average='weighted'), 3)
+print("RF model F1 before tuning: ", base_f1)
+```
+
+```{python RF_Tune}
+estimators = [75, 100, 150]
+splits = [2, 3, 4]
+leaves = [1, 2, 3]
+
+# set starting parameters to the defaults
+best_est = 100
+best_split = 2
+best_leaf = 1
+best_f1 = base_f1
+
+for e in estimators:
+  for s in splits:
+    for l in leaves:
+      model = RandomForestClassifier(n_estimators=e,
+                          min_samples_split=s,
+                          min_samples_leaf=l)
+      f1s = cross_val_score(model, X_train, y_train, cv=kf, scoring='f1_weighted')
+      mean_f1 = round(np.mean(f1s), 3)
+      if mean_f1 >= best_f1:
+        best_f1 = mean_f1
+        best_est = e
+        best_split = s
+        best_leaf = l
+```
+
+```{python RF_Build, echo=F}
+rf_mean_f1 = best_f1    # holdout method mean F1 score
+
+# build and evaluate final model
+rf_model = RandomForestClassifier(n_estimators=best_est, min_samples_split=best_split, min_samples_leaf=best_leaf)
+
+rf_model.fit(X_train, y_train);
+rf_pred = rf_model.predict(X_test)
+rf_score = round(rf_model.score(X_test, y_test), 3)
+print("RF model after tuning:", "\nBest score: ", rf_score, "\nBest F1 w/ holdout: ", rf_mean_f1, "\nBest # estimators: ", 
+best_est, "\nBest # splits: ", best_split, "\nBest leaf: ", best_leaf)
+```
+
+```{python RF_Stats, echo=F}
+rf_cr = classification_report(y_test, rf_pred)
+print("RF Model Classification Report: \n", rf_cr)
+```
+
+
+### Artificial Neural Network  
+Artificial neural network is a powerful model inspired by the structure of biological neurons, consisting of interconnected layers of nodes that process information through weighted connections. The network learns patterns in data by adjusting these connection weights through forward and backward training. The hyperparameters tuned are hidden layers, initial learning rate, and learning rate decrease, which all describe ways in which the network constructs and trains itself. The maximum number of iterations was adjusted to avoid convergence warnings. Oftentimes, early stopping can be used to prevent overfitting of a model. However, this model took many iterations beyond the default number to train to completion so early stopping was not a concern. 
+I mentioned before that there is one caveat to the ability to build all three models from the same training data set. Neural Networks cannot process non-numeric data. Even the target variable must be numeric. Before generating a model, we must encode the categorical target variable. I initially attempted this with one-hot encoding carried out through the _sklearn.preprocessing_ function but my program begin crashing once stratified sampling was involved so I was forced to switch to another encoding method. Claude helped me identify which encoding package would be compatible with _StratifiedKFold_ as well as how to inverse transform the predictions back to text values for the sake of interpreting results and later integration into the heterogeneous ensemble function.
+```{python Encoder}
+le = LabelEncoder()
+y_train_enc = le.fit_transform(y_train)
+y_test_enc = le.transform(y_test) 
+```
+
+```{python ANN_Base, echo=F}
+ann_model = MLPClassifier(max_iter=3000)
+ann_model.fit(X_train, y_train_enc);
+ann_pred = ann_model.predict(X_test)
+base_f1 = round(f1_score(y_test_enc, ann_pred, average='weighted'), 3)
+print("ANN model F1 before tuning: ", base_f1)
+```
+
+```{python ANN_Tune}
+layers = [75, 100, 150]
+init = [0.0001, 0.001, 0.01]
+rate = ['constant', 'adaptive']
+
+best_layer = 100
+best_init = 0.001
+best_rate = 'constant'
+best_f1 = base_f1
+
+for l in layers:
+  for r in init:
+    for s in rate:
+      model = MLPClassifier(hidden_layer_sizes=(l,),
+                            learning_rate_init=r,
+                            learning_rate=s,
+                            max_iter=3000)
+      f1s = cross_val_score(model, X_train, y_train_enc, cv=kf, scoring='f1_weighted')
+      mean_f1 = np.mean(f1s)
+      if mean_f1 >= best_f1:
+        best_f1 = mean_f1
+        best_layer = l
+        best_init = r
+        best_rate = s
+```
+
+```{python ANN_Build, echo=F}
+ann_mean_f1 = best_f1     # holdout method mean F1 score
+
+# build and evaluate final model
+ann_model = MLPClassifier(hidden_layer_sizes=(best_layer,),
+      learning_rate_init=best_init,
+      learning_rate=best_rate,
+      max_iter=3000)
+      
+ann_model.fit(X_train, y_train_enc);
+ann_pred = ann_model.predict(X_test)
+ann_score = round(ann_model.score(X_test, y_test_enc), 3)
+print("ANN model after tuning: ", "\nBest score: ", ann_score, "\nBest F1 w/ holdout: ", ann_mean_f1, "\nBest # hidden layers: ", 
+best_layer, "\nBest initial learning rate: ", best_init, "\nBest rate type: ", best_rate)
+```
+
+```{python ANN_Stats, echo=F}
+ann_pred = le.inverse_transform(ann_pred)   # tranform predictions back to text values
+ann_cr = classification_report(y_test, ann_pred)
+print("ANN Model Classification report:\n", ann_cr)
+```
+
+### Heterogeneous Ensemble
+All of my models have great accuracy but my random forest model in particular is almost always accurate. This being the case, my ensemble model will always choose the prediction of the model with the highest F1 score except in the event that both of the other models agree with each other, then it will choose their prediction. This is a method of stacking by way of weighting predictions by their respective model's F1 scores, where if the rare event occurs that the primary model disagrees with the secondary and tertiary models, but the later two agree with each other, they will override the prediction of the primary model. Otherwise, the ensemble effectively always chooses the primary model's prediction. 
+My function will take 7 arguments, the 3 models (which will have default arguments), the average F1 scores of each model saved during the process of cross-validation, and data on which to make predictions. 
+```{python Ensemble_Function}
+def ensemble(new_data, model1=svc_model, model2=rf_model, model3=ann_model, 
+f1_1=svc_mean_f1, f1_2=rf_mean_f1, f1_3=ann_mean_f1):
+  
+  # SVC information
+  svc_dict = {'model': model1, 'predictions': model1.predict(new_data), 'f1': f1_1}
+  
+  # RF information
+  rf_dict = {'model': model2, 'predictions': model2.predict(new_data), 'f1': f1_2}
+
+  # ANN information (categorizing predictions)
+  ann_dict = {'model': model3, 'predictions': le.inverse_transform(model3.predict(new_data)), 'f1': f1_3}
+  
+  dict_list = [svc_dict, rf_dict, ann_dict]
+  classifiers = {}    # dictionary of dictionaries where models will be ranked
+  
+  # find classifier with highest F1
+  best_f1 = np.max([f1_1, f1_2, f1_3])
+  
+  # assign model priority by F1 value
+  for d in dict_list:
+    if d['f1'] == best_f1:
+      classifiers['primary'] = d
+    elif len(classifiers) < 2:
+      classifiers['secondary'] = d
+    else:
+      classifiers['tertiary'] = d
+   
+  ens_pred = []
+  
+  # assemble predictions
+  for i in range(len(new_data)):
+    prim_pred = classifiers['primary']['predictions'][i]
+    sec_pred = classifiers['secondary']['predictions'][i]
+    tert_pred = classifiers['tertiary']['predictions'][i]
+    
+    if sec_pred == tert_pred:
+      ens_pred.append(sec_pred)
+    else:
+      ens_pred.append(prim_pred)
+      
+  return ens_pred  
+```
+
+```{python ens_Stats, echo=F}
+ens_pred = ensemble(X_test)
+ens_score = round(np.sum(y_test==ens_pred)/len(y_test), 3)
+ens_cr = classification_report(y_test, ens_pred, output_dict=True)
+ens_f1 = round(ens_cr['weighted avg']['f1-score'], 3)
+ens_cr = classification_report(y_test, ens_pred)
+print("Ensemble Model Classification report:\n", ens_cr)
+```
+
+
+## Summary
+```{python Summary_Stats, echo=F}
+stats = [
+  ['Support Vector Classifier', svc_score, svc_mean_f1],
+  ['Random Forest', rf_score, rf_mean_f1],
+  ['Artificial Neural Network', ann_score, ann_mean_f1], 
+  ['Heterogeneous Ensemble', ens_score, ens_f1]
+]
+headers = ["Model", "Accuracy", "F1"]
+```
+
+
+Three predictive models (support vector classifier, random forest, and artificial neural network) and a heterogeneous ensemble model were built to predict anemia diagnosis type among 9 classifiers from a collection of blood samples representing 14 different cell types. The data was cleaned for visualization purposes but the models were trained on the original data set with satisfactory results. Models were tested on both the pre-processed and raw data sets with performance metrics converging to similar values regardless of the presence of outliers, lending weight to the robust nature of these models in the presence of messy data and the dependency on effort put into hyperparameter tuning to improve performance rather than meticulous data shaping. The SVC model performed a point better on the processed data while the RF model performed a point worse. Since the RF is the dominant model in my heterogeneous ensemble, I ultimately trained my models on the raw data.  
+The three standalone models were trained on data using stratified sampling during both data partitioning and cross-validation to ensure that all samples were present at the time of training. Hyperparameters were tuned using F1 as the metric by which to measure performance. Hyperparameters corresponding to the highest F1 score during tuning were incorporated into the final models to be included in the heterogeneous ensemble. Despite the presence of class imbalance, SMOTE was not used because of the extremity of the imbalance, where some classes in the training data were only represented by 2-3 samples. All models were trained on identical unseen data for the ideal direct comparison of performance.   
+The heterogeneous ensemble function was designed to stack models by F1 scores. It assumes that the highest performing model has the correct prediction unless both other models are in collective disagreement, in which case their shared prediction will be used. We can see the performance metrics in the table below. Any decrease in performance compared to the primary model can be explained by the secondary and tertiary models sharing a weakness for a specific class. As it stands, it is difficult to improve the performance of the random forest model on this data set, assuming that is the primary model defined by the ensemble function.
+
+```{python tabulate, echo=F}
+print(tabulate(stats, headers=headers, tablefmt='grid'))
+```
+
+
+<hr />   
+
+
+## References
+- Artificium - Dr. Martin Schedulbauer 
+- [Data Source](https://www.kaggle.com/datasets/ehababoelnaga/anemia-types-classification)
+- [SciKit Learn Documentation](www.scikit-learn.org)  
+- [Scipy Documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.shapiro.html)
+- [Hyperparameters](https://stackabuse.com/understanding-svm-hyperparameters/)  
+- Youtube: Ryan and Matt Data Science, freeCodeCamp.org and Kylie Young  
+- AI Assistance: Claude AI & Open AI ChatGPT
