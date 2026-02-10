@@ -1,0 +1,218 @@
+---
+title: "Gene Expression Cancer Classification"
+subtitle: "A Machine Learning Approach"
+author: "Gale, Amanda"
+date: "Spring 2026"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: united
+---
+
+
+```{r, echo=F, message=F}
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(caret)
+library(class)
+library(MLmetrics)
+```
+
+```{r, echo=F}
+df_original <- read.csv("https://user.fm/files/v2-01065fef9bb95a43b21e6e3e15c6b662/data.csv")
+labels <- read.csv("https://user.fm/files/v2-5b000a02ecc47821938c6e3dd329ae02/labels.csv")
+```
+
+```{r, echo=F}
+# do not overwrite original, takes a long time to load
+df <- df_original
+# keep numeric and plain text copies for modeling later on
+df$Class <- labels$Class
+# factorize class
+df$Class_Numeric <- as.numeric(factor(df$Class))
+```
+
+
+
+## Introduction
+This program uses gene expression data to build a classification model that predicts various types of cancer. The gene expression data from The Cancer Genome Atlas (TCGA) Pan-Cancer Analysis Project (Weinstein et al., 2013) includes RNA-Seq measurements for `r ncol(df)-1` genes across `r nrow(df)` tumor samples representing five cancer types, characterized by their RNA expression profiles. The distribution of classes is displayed in the figure below.
+
+```{r, echo=F}
+# reorder data frame to have classes before expression levels
+df <- df[,c(1, 20533, 20534, 2:length(df_original))]
+df_attrs <- df[,1:3]   # sample nums/classes
+df_genes <- df[, 4:20534]   # genes
+```
+
+```{r, echo=F, fig.width=5, fig.height=4, fig.align='center'}
+class_table <- prop.table(table(df_attrs$Class))
+class_data <- as.data.frame(class_table)
+
+ggplot(class_data, aes(x = "", y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  labs(title = "Distribution of Cancer Types in Dataset",
+       fill = "Cancer Type") +
+  geom_text(aes(label = paste0(round(Freq*100, 1), "%")),
+            position = position_stack(vjust = 0.5)) 
+```
+
+
+## Dimensionality Reduction
+
+### Variance
+There are currently `r ncol(df)` genes contributing to the data set. Although not an unusual number of genes to encounter in the context of transcriptomics, this is an enormous number of factors with which to build a predictive model. The number must be reduced in order to build an effective model. Likewise, in order to carry out principle component analysis (PCA), the most effective means of dimensionality reduction, the number of genes must be reduced to prevent the impact from noise. To achieve this, genes will first be significantly reduced simply by analyzing variance among individual samples between all classes.
+```{r}
+gene_var <- apply(df_genes, 2, var)   # calculate variance
+top_genes <- order(gene_var, decreasing=T)   # order by variance
+n_genes <- 500   # the number of genes to save
+df_top_genes <- df_genes[, top_genes[1:n_genes]]   # top 500 genes
+```
+
+```{r, echo=F}
+# the minimum variance 
+cutoff_var <- gene_var[top_genes[n_genes]]
+```
+
+This variance distribution of the genes is displayed. Note the overwhelming proportion of genes with little to no variance among all patient samples, indicating that the gene carries no significant link to disease state. Housekeeping genes are common contributors to this group. For reference, the gene with the lowest variance out of the ones selected has a variance of `r cutoff_var`.
+```{r, echo=F, fig.width=6, fig.height=5, fig.align='center'}
+gene_var <- as.data.frame(gene_var)
+ggplot(gene_var, aes(x=gene_var)) +
+  geom_histogram(
+    bins = 15,              # Number of bins (or use binwidth)
+    fill = "#00D0AB",     # Fill color
+    color = "black",        # Border color
+    alpha = 0.7             # Transparency
+  ) +
+  labs(
+    title = "Distribution of Expression Variance Between Disease States",
+    x = "Variance",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+### Partition Data
+Data must be partitioned before proceeding to normalization and PCA to prevent leakage into models and, thus, over-optimistic metrics. Data will be partitioned into training and validation sets using a 70/30 split, withholding some data during training.
+```{r}
+train_idx <- createDataPartition(df_attrs$Class, 
+                                 p=0.70, 
+                                 list=F)
+# training data
+X_train <- df_top_genes[train_idx,]
+y_train <- df_attrs$Class[train_idx]
+
+# validation data
+X_test <- df_top_genes[-train_idx,]
+y_test <- df_attrs$Class[-train_idx]
+```
+
+
+### PCA
+Further dimensionality reduction can be achieved through principal component analysis. This technique requires data to be scaled and normalized. Gene expression data is expected to be normalized by default, but it is prudent to double check and perform a transformation if necessary. Finally, the results of PCA can be visualized to display the ability of this unsupervised feature engineering method to be able to cluster features based on class. In this case, we can see that the 500 genes are well-associated within a cluster associated with a distinct type of cancer.
+```{r, echo=F}
+# testing
+for (i in (1:length(X_train))) {
+  if (max(X_train[i]) > 100) {
+    print("Gene ", colnames(X_train), "Not log-transformed")
+    X_train[i] <- log2(X_train[i] + 1)
+  }
+}
+
+# validation
+for (i in (1:length(X_test))) {
+  if (max(X_test[i]) > 100) {
+    print("Gene ", colnames(X_test), "Not log-transformed")
+    X_test[i] <- log2(X_test[i] + 1)
+  }
+}
+```
+
+```{r}
+pca_result <- prcomp(X_train, center = TRUE, scale. = TRUE)
+```
+
+```{r, echo=F}
+pca_scores <- as.data.frame(pca_result$x[,1:2])
+X_train <- as.data.frame(pca_result$x[,1:50])
+X_train$Cancer <- pca_scores$Cancer <- y_train
+```
+
+```{r, echo=F, fig.width=6, fig.height=5, fig.align='center'}
+# Thanks, Claude!
+# Add 95% confidence ellipses around each cancer type
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = Cancer, fill = Cancer)) +
+  geom_point(size = 3, alpha = 0.6) +
+  stat_ellipse(geom = "polygon", alpha = 0.2, level = 0.95) +  # 95% confidence ellipse
+  theme_minimal() +
+  labs(
+    title = "Fig 3: Unsupervised PCA Naturally Separates Cancer Types",
+    x = paste0("PC1 (", round(summary(pca_result)$importance[2,1] * 100, 1), "% variance)"),
+    y = paste0("PC2 (", round(summary(pca_result)$importance[2,2] * 100, 1), "% variance)"),
+    color = "Cancer Type",
+    fill = "Cancer Type"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "right"
+  )
+```
+
+```{r, echo=F}
+X_test <- as.data.frame(predict(pca_result, newdata=X_test)[,1:50])
+X_test$Cancer <- y_test
+```
+
+
+## Model Build
+The model being demonstrated is a random forest, a powerful model with the ability to make predictions based on a branching system of logical questions. Unlike a black-box algorithm, this model carries the potential to be interpreted by humans, a characteristic required in human diagnostics.
+```{r}
+train_ctrl <- trainControl(
+                    method="cv",
+                    number=5,
+                    classProbs=T
+              )
+```
+
+```{r}
+model <- train(
+            Cancer ~ ., 
+            data=X_train,
+            method="rf",
+            ntree=30,
+            trControl=trainControl(
+              method="cv", number=5, classProbs=T
+            ),
+            tuneLength=5
+          )
+```
+ 
+```{r}
+pdxns <- predict(model, newdata = X_test)
+```
+
+```{r, echo=F}
+pdxn_acc <- round(length(which(pdxns==X_test$Cancer))/length(X_test$Cancer), 3)*100
+paste0("Prediction accuracy: ", pdxn_acc, "%")
+```
+
+
+## Results
+Data was prepared using normalization by log transformation, scaling, and dimensionality reduction by variance filtering and principle component analysis. A random forest model was trained and evaluated on a 70/30 split of the data using cross-validation and the native distribution of classes. The model was evaluated using prediction accuracy, carrying a correct prediction rate of `r pdxn_acc`%. This unusually high accuracy throws suspicion at data leakage being present in the model. Possible sources of data leakage have been controlled for, such as splitting data before normalization/PCA. Referring back to Figure 3 may hint as to why the performance is so high. PCA obtained remarkable clustering of components by class for all 500 genes it originally analyzed. One may imagine that the top 50 genes from these results would exist in even tighter clusters, having the potential to produce a model with accuracy on this scale. 
+
+Future efforts would involve building additional models and extending this program to analyze other gene expression data sets with more potential for data shaping and model tuning.
+
+
+## References
+Samuele, R., & Gianmaria, S. (2016). Gene expression cancer RNA-Seq [Data set]. UCI Machine Learning Repository. https://doi.org/10.24432/C5R88H
+
+## Acknowledgments
+
+This project was completed independently with consultation of online resources and AI assistance for technical troubleshooting and code optimization. All code implementations were understood, tested, and adapted for this specific analysis. Key learning resources included:
+
+- R documentation and package vignettes
+- Statistical learning textbooks (cite specific ones if used)
+- Online tutorials for specific techniques (cite if directly used)
