@@ -37,7 +37,7 @@ df$Class_Numeric <- as.numeric(factor(df$Class))
 
 
 ## Introduction
-This program uses gene expression data to build a classification model that predicts various types of cancer. The gene expression data from The Cancer Genome Atlas (TCGA) Pan-Cancer Analysis Project (Weinstein et al., 2013) includes RNA-Seq measurements for `r ncol(df)-1` genes across `r nrow(df)` tumor samples representing five cancer types, characterized by their RNA expression profiles. The distribution of classes is displayed in the figure below.
+This program uses gene expression data to build a classification model that predicts various types of cancer. The gene expression data from The Cancer Genome Atlas (TCGA) Pan-Cancer Analysis Project (Weinstein et al., 2013) includes RNA-Seq measurements for `r format(ncol(df)-1, scientific=F)` genes across `r format(nrow(df), scientific=F)` tumor samples representing five cancer types, characterized by their RNA expression profiles. The distribution of classes is displayed in the figure below.
 
 ```{r, echo=F}
 # reorder data frame to have classes before expression levels
@@ -64,7 +64,7 @@ ggplot(class_data, aes(x = "", y = Freq, fill = Var1)) +
 ## Dimensionality Reduction
 
 ### Variance
-There are currently `r ncol(df)` genes contributing to the data set. Although not an unusual number of genes to encounter in the context of transcriptomics, this is an enormous number of factors with which to build a predictive model. The number must be reduced in order to build an effective model. Likewise, in order to carry out principle component analysis (PCA), the most effective means of dimensionality reduction, the number of genes must be reduced to prevent the impact from noise. To achieve this, genes will first be significantly reduced simply by analyzing variance among individual samples between all classes.
+There are currently `r format(ncol(df), scientific=F)` genes contributing to the data set. Although not an unusual number of genes to encounter in the context of transcriptomics, this is an enormous number of factors with which to build a predictive model. The number must be reduced in order to build an effective model. Likewise, in order to carry out principle component analysis (PCA), the most effective means of dimensionality reduction, the number of genes must be reduced to prevent the impact from noise. To achieve this, genes will first be significantly reduced simply by analyzing variance among individual samples between all classes.
 ```{r}
 gene_var <- apply(df_genes, 2, var)   # calculate variance
 top_genes <- order(gene_var, decreasing=T)   # order by variance
@@ -77,7 +77,7 @@ df_top_genes <- df_genes[, top_genes[1:n_genes]]   # top 500 genes
 cutoff_var <- gene_var[top_genes[n_genes]]
 ```
 
-This variance distribution of the genes is displayed. Note the overwhelming proportion of genes with little to no variance among all patient samples, indicating that the gene carries no significant link to disease state. Housekeeping genes are common contributors to this group. For reference, the gene with the lowest variance out of the ones selected has a variance of `r cutoff_var`.
+This variance distribution of the genes is displayed. Note the overwhelming proportion of genes with little to no variance among all patient samples, indicating that the gene carries no significant link to disease state. Housekeeping genes are common contributors to this group. For reference, the gene with the lowest variance out of the ones selected has a variance of `r format(cutoff_var, scientific=F)`.
 ```{r, echo=F, fig.width=6, fig.height=5, fig.align='center'}
 gene_var <- as.data.frame(gene_var)
 ggplot(gene_var, aes(x=gene_var)) +
