@@ -1,0 +1,135 @@
+---
+title: 'Anemia Data Pre-Processing'
+subtitle: "DA5030"
+author: "Gale, Amanda"
+date: "Fall 2025"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true 
+---
+<br />
+<hr />
+<br />
+
+## Introduction
+In this document, the anemia data set will be cleaned and shaped for modeling with random forest, support vector classifier, and neural network algorithms. These are fairly robust algorithms that can handle messy data with some restrictions, such as the data must not have any missing values and the data and the data must be scaled to a common range. The data will also be cleaned of extreme outliers for visualization purposes. The scaling of data will be carried out in the main notebook as part of the modeling process after separating data into training and testing sets to prevent data leakage. Since this data set is small, effort will be taken to limit the amount of data loss as much as possible.
+
+### Retrieve Data
+Here, we can see our imported data from the database created in the main file. It is entirely made up of blood counts of various cells used to predict anemia diagnosis types.
+```{python queryData}
+con = sqlite3.connect('anemia_project.db')
+df = pd.read_sql('SELECT * FROM anemia_data', con)
+df.head()
+```
+
+## Identify Missing Values
+Our algorithms cannot accept missing values. Luckily, we can see that we have a complete data set.
+```{python missingVals}
+# AI-derived code, how efficient
+# number of missing values in each column
+missing_counts = df.isna().sum()
+
+for col, count in missing_counts.items():
+    status = "no" if count == 0 else count
+    print(f"Column '{col}' has {status} missing values")
+```
+I will delete some values and impute them for demonstrative purposes. 
+```{python deleteVals}
+na_ind = np.random.randint(len(df), size=10)     # select random values to delete
+df.loc[na_ind, "WBC"] = np.nan     # delete values
+print("Before Imputation:\n", df['WBC'].iloc[na_ind])
+```
+I will use the same method I used to delete values to impute values with the median of the column. This could be done in a loop for all columns consecutively with the identification step. This is how outliers are identified and imputed in the next section.
+```{python imputeVals}
+wbc_med = np.median(df['WBC'].dropna())    # compute median without na values
+wbc_nan = df['WBC'].isna()    # find missing values organically
+df.loc[wbc_nan, 'WBC'] = np.median(df['WBC'].dropna())    # impute missing values with median
+print("After Imputation:\n", df.loc[wbc_nan, 'WBC'])
+```
+The values have been successfully imputed with the median. Other approaches could have been random imputation or imputation with kNN or another similar imputation algorithm. Modern packages offer quick and accurate methods or doing this that are very user-friendly. 
+
+## Identify Outliers
+Outliers will be identified and handled. Since this is primarily for visualization purposes, outliers will be replaced with their column's median value. If this were a real data set, they may be handled one-by-one and determined whether they might be mistaken entries simply off by a power of 10. Since this is patient data involved in diagnosing a life-threatening disease, the patient's sample also may be recounted/recollected and their sample omitted in the meantime.   
+It is worth noting that this is an artificial data set designed for learning purposes. These extreme outliers might be handled differently were this a real data set. However, it is also worth noting that omitting or changing outliers for the sake of modeling is not always the correct approach. Especially for modeling diseases like anemia, which is solely defined by blood counts outside of the normal range, outliers may be the only way to differentiate diseased individuals from healthy ones.
+```{python z_score_func}
+def z_score(col):
+  # function to convert a column of numbers into their z-scores values
+  col_mean = np.mean(col)
+  col_stdev = np.std(col)
+  z_col = (col - col_mean) / col_stdev
+  return(z_col)
+```
+
+```{python IDOutliers}
+# some AI assistance used for Python syntax
+n_rows = df.index
+# numeric columns
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+for col in numeric_cols:
+
+  z_col = z_score(df[col])    # get z-score column
+  outliers = []      # track outliers
+  indices = []    # track which indices are outliers
+  
+  for i in n_rows:
+    if z_col[i] > 6 or z_col[i] < -6:
+      outliers.append(round(z_col[i].tolist()))
+      indices.append(i)
+      
+  s = "no"
+  if len(outliers) > 0: 
+    s = len(outliers)
+  
+  print(f"There are {s} extreme outliers present in column {col}.")
+  
+  # replace outliers with column median
+  if s != "no":
+    med = round(np.median(df[col]), 2)
+    print("Values before replacement: ", df.loc[indices, col].values)
+    df.loc[indices, col] = med
+    print("Column median replacement value: ", med)
+```
+
+## Distribution Analysis
+For the sake of demonstration, I checked for normality in my columns using the Shapiro-Wilk test for normality. However, it is not necessary for transform my data for the algorithms I am building. If I were transforming, I could do so with a square root, logarithmic, or chi-squared transformation then test the data on models to decide the optimal transformation.
+```{python ShapiroTest}
+# shapiro-wilk test
+swt = stats.shapiro(df[numeric_cols], axis=0).pvalue
+
+for i in range(len(numeric_cols)):
+  s = "not "
+  # check p-value is above cutoff, must be less than alpha for normal distribution
+  if swt[i] > 0.05:
+    s = ""
+  print(f"Column {numeric_cols[i]} is {s}normally distributed.")
+```
+
+# Correlation Analysis
+I will analyze multicolinearity using the Spearman method with a cutoff value of 0.80. This method is appropriate for when data is not normally distributed, as we proved.
+```{python}
+corr_matrix = df[numeric_cols].corr(method='spearman')
+row_idx, col_idx = np.where((corr_matrix > 0.80) & (corr_matrix != 1.0))
+
+
+
+if len(row_idx) > 0:
+  print("Columns in our data that are highly correlated:\n", corr_matrix.iloc[row_idx, col_idx])
+  
+else: 
+    print("No columns in our data are highly correlated.")
+```
+
+```{python ExportData, echo=F, results='hide'}
+# write cleaned data to database
+df.to_sql('clean_anemia_data', con, if_exists='replace', index=False)
+con.close()
+```
+
+## Summary
+The data set has been shaped appropriate to what is necessary for the modeling types used in this project. It is free of missing values and extreme outliers have been handled for the sake of visual analysis. 
+
+<hr />
