@@ -1,4 +1,6 @@
+# Anemia Classifier Pipieline
 
+## Project Description
 This pipeline builds various predictive models designed to classify subtypes of anemia 
 based on results from blood tests. If you are a reviewer not intending to execute the 
 pipeline, please see the HTML outputs for the project in the *outputs_and_zip_for_reviewers* folder.
@@ -10,6 +12,10 @@ RStudio will have access to a copy of Python in order to create a virtual enviro
 All Python libraries will be installed within the virtual environment created in this
 project folder. 
 
+## Dataset 
+Anemia Types Classification from Kaggle - https://www.kaggle.com/datasets/ehababoelnaga/anemia-types-classification
+
+## Execution 
 To execute the full pipeline:
 
 1. Ensure that the project directory contains all necessary files listed below.
@@ -18,17 +24,18 @@ To execute the full pipeline:
 4. Knit *Main_File.Rmd*. This will automatically render the data pre-processing file, *data_prep.Rmd*.
 In order to knit this prep file independently, the first 73 lines of *Main_File.Rmd* must first be executed. 
 
-Troubleshooting: This pipeline will not work if RStudio cannot find a local copy of Python. If this is an issue, you
+## Troubleshooting 
+This pipeline will not work if RStudio cannot find a local copy of Python. If this is an issue, you
 should run it instead through Posit Cloud.
 
 
-Required files in directory:
+## Required files in directory
 - FinalProject.Rproj
 - Main_File.Rmd
 - data_prep.Rmd
 - README.md
 
-Required R packages:
+## Required R Dependencies
 - reticulate
 - RSQLite
 
