@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BIOHACK 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Lato:wght@300;400;700&family=Source+Code+Pro:wght@400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a2a1a;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh;
+    font-family: 'Lato', sans-serif;
+  }
+
+  .flyer {
+    width: 700px;
+    background: linear-gradient(170deg, #0f1f0f 0%, #152415 40%, #1a2e1a 100%);
+    border-radius: 18px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(100,200,80,0.15);
+  }
+
+  /* SVG botanical background */
+  .bg-svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; opacity: 0.07;
+  }
+
+  /* Top hero banner */
+  .hero {
+    background: linear-gradient(135deg, #0d2010 0%, #1a3d1a 50%, #0f2a1a 100%);
+    padding: 48px 52px 36px;
+    position: relative;
+    border-bottom: 1px solid rgba(100,200,80,0.2);
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #2d8a2d, #7ec850, #4caf50, #2d8a2d);
+  }
+
+  .event-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 11px;
+    color: #7ec850;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    border: 1px solid rgba(126,200,80,0.3);
+    padding: 5px 14px;
+    border-radius: 20px;
+    background: rgba(126,200,80,0.07);
+    margin-bottom: 20px;
+  }
+
+  .dna-icon { font-size: 14px; }
+
+  .event-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 80px;
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #d4f5c0 0%, #7ec850 50%, #4caf50 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 4px;
+  }
+
+  .event-sub {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(180,230,140,0.6);
+    letter-spacing: 8px;
+    margin-bottom: 16px;
+  }
+
+  .tagline {
+    font-size: 15px;
+    font-weight: 300;
+    color: #a0c87a;
+    letter-spacing: 1.5px;
+    font-style: italic;
+  }
+
+  /* Leaf/cell decorative elements */
+  .leaf-decor {
+    position: absolute; right: 44px; top: 36px;
+    font-size: 100px;
+    opacity: 0.12;
+    transform: rotate(25deg);
+    user-select: none;
+  }
+
+  /* Main content */
+  .body {
+    padding: 36px 52px 40px;
+    position: relative;
+  }
+
+  /* Info row */
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 30px;
+  }
+
+  .info-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(100,180,70,0.18);
+    border-radius: 12px;
+    padding: 16px 14px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .info-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #4caf50, #7ec850);
+  }
+
+  .info-icon { font-size: 20px; margin-bottom: 7px; display: block; }
+  .info-label {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #7ec850;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .info-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #d4f0b8;
+    line-height: 1.4;
+  }
+
+  /* Section label */
+  .section-label {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: #7ec850;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(126,200,80,0.3), transparent);
+  }
+
+  /* Blurb */
+  .blurb {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(100,180,70,0.15);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 28px;
+    color: #a8c88a;
+    font-size: 13px;
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  /* Schedule */
+  .schedule {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+  .schedule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(100,180,70,0.12);
+    border-radius: 8px;
+    padding: 11px 14px;
+  }
+  .schedule-date {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 11px;
+    color: #7ec850;
+    white-space: nowrap;
+    padding-top: 1px;
+    min-width: 60px;
+  }
+  .schedule-detail { font-size: 13px; color: #c4e0a0; line-height: 1.4; }
+  .schedule-detail span {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .encouraged { background: rgba(126,200,80,0.1); color: #7ec850; border: 1px solid rgba(126,200,80,0.25); }
+  .required { background: rgba(255,160,60,0.1); color: #ffaa50; border: 1px solid rgba(255,160,60,0.25); }
+
+  /* Topics pills */
+  .topics {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 28px;
+  }
+  .topic-pill {
+    font-size: 12px;
+    font-weight: 400;
+    color: #b8e68a;
+    border: 1px solid rgba(126,200,80,0.25);
+    background: rgba(76,175,80,0.08);
+    padding: 6px 14px;
+    border-radius: 20px;
+  }
+
+  /* Prizes */
+  .prizes {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .prize-card {
+    border-radius: 10px;
+    padding: 14px 12px;
+    text-align: center;
+    border: 1px solid;
+  }
+  .prize-card.gold {
+    border-color: rgba(255,215,0,0.3);
+    background: rgba(255,215,0,0.06);
+  }
+  .prize-card.silver {
+    border-color: rgba(192,192,192,0.3);
+    background: rgba(192,192,192,0.05);
+  }
+  .prize-card.bronze {
+    border-color: rgba(205,127,50,0.3);
+    background: rgba(205,127,50,0.05);
+  }
+
+  .prize-medal { font-size: 22px; margin-bottom: 6px; display: block; }
+  .prize-place {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .prize-card.gold .prize-place { color: #ffd700; }
+  .prize-card.silver .prize-place { color: #c0c0c0; }
+  .prize-card.bronze .prize-place { color: #cd7f32; }
+
+  .prize-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #d4f0b8;
+  }
+  .prize-desc { font-size: 11px; color: #7a9a60; margin-top: 2px; }
+
+  /* Sponsors */
+  .sponsors {
+    display: flex; align-items: center; gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .sponsor-badge {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 11px;
+    color: #8ab870;
+    border: 1px solid rgba(126,200,80,0.2);
+    background: rgba(76,175,80,0.06);
+    padding: 7px 16px;
+    border-radius: 8px;
+    letter-spacing: 1px;
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(126,200,80,0.3), rgba(76,175,80,0.1), transparent);
+    margin-bottom: 24px;
+  }
+
+  /* CTA */
+  .cta {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+  .reg-block {}
+  .reg-label {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #7ec850;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .reg-link {
+    font-size: 14px;
+    font-weight: 700;
+    color: #a8e07a;
+  }
+
+  .reg-btn {
+    background: linear-gradient(135deg, #2d8a2d, #5cbf3a);
+    color: #fff;
+    font-family: 'Lato', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 14px 28px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow: 0 4px 20px rgba(76,175,80,0.25);
+    white-space: nowrap;
+  }
+
+  /* Organizers */
+  .organizers {
+    background: rgba(0,0,0,0.2);
+    border-top: 1px solid rgba(100,180,70,0.15);
+    padding: 24px 52px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .org-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(100,180,70,0.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .org-role {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #7ec850;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .org-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #d4f0b8;
+    margin-bottom: 4px;
+  }
+  .org-email {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 11px;
+    color: #7a9a60;
+  }
+</style>
+</head>
+<body>
+<div class="flyer">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="leaf-decor">🌿</div>
+    <div class="event-name">BIOHACK</div>
+    <div class="event-sub">2026</div>
+    <div class="tagline">If we can't code it in 48 hours, you don't need it.</div>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+
+    <!-- Info Cards -->
+    <div class="info-row">
+      <div class="info-card">
+        <span class="info-icon">🗓️</span>
+        <div class="info-label">Dates</div>
+        <div class="info-value">April 14–16<br/>2026</div>
+      </div>
+      <div class="info-card">
+        <span class="info-icon">📍</span>
+        <div class="info-label">Location</div>
+        <div class="info-value">Remote</div>
+      </div>
+      <div class="info-card">
+        <span class="info-icon">👥</span>
+        <div class="info-label">Open To</div>
+        <div class="info-value">All Skill<br/>Levels</div>
+      </div>
+    </div>
+
+    <!-- Blurb -->
+    <div class="blurb">
+      Join us for the first ever Hackathon that invites remote participation. Whether you are located at one of our many campuses or online, you are welcome to join this fun and friendly competition. Team up or work alone to show your skills and add another project to your portfolio. Win cool prizes. You will have 48 hours to develop your project from start to finish. Participation will be limited to 10 teams. Looking for a teammate? Reach out to one of the organizers below. More information available following registration.
+    </div>
+
+    <!-- Schedule -->
+    <div class="section-label">Schedule</div>
+    <div class="schedule">
+      <div class="schedule-item">
+        <div class="schedule-date">Apr 14</div>
+        <div class="schedule-detail">Kickoff Meeting — 5:00–5:30pm EST <span class="encouraged">Attendance Encouraged</span></div>
+      </div>
+      <div class="schedule-item">
+        <div class="schedule-date">Apr 16</div>
+        <div class="schedule-detail">Presentations & Judging — 5:00–7:00pm EST <span class="required">Attendance Required</span></div>
+      </div>
+    </div>
+
+
+
+    <div class="divider"></div>
+
+    <!-- CTA -->
+    <div class="cta">
+      <div class="reg-block">
+        <div class="reg-label">Register at</div>
+        <div class="reg-link">forms.gle/YtN6hLGdNujzPWdz5</div>
+      </div>
+      <a href="https://forms.gle/YtN6hLGdNujzPWdz5" target="_blank"><button class="reg-btn">🌱 Register Now</button></a>
+    </div>
+
+  </div>
+
+  <!-- Organizers -->
+  <div class="organizers">
+    <div style="grid-column:1/-1; font-family:'Source Code Pro',monospace; font-size:9px; letter-spacing:3px; color:#7ec850; text-transform:uppercase; margin-bottom:4px;">Organized By</div>
+    <div class="org-card">
+      <div class="org-role">MS Bioinformatics</div>
+      <div class="org-name">Amanda Gale</div>
+      <div class="org-email">gale.am@northeastern.edu</div>
+    </div>
+    <div class="org-card">
+      <div class="org-role">MS Biotechnology</div>
+      <div class="org-name">Charity Acheampong</div>
+      <div class="org-email">acheampong.c@northeastern.edu</div>
+    </div>
+    <div class="org-card">
+      <div class="org-role">MS Biotechnology</div>
+      <div class="org-name">Anuj Vijay Ghodke</div>
+      <div class="org-email">ghodke.an@northeastern.edu</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
