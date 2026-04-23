@@ -1,5 +1,9 @@
 # Anemia Classifier Pipieline
 
+## Author Information
+**Name**: Amanda Gale  
+**Institution**: Northeastern University  
+
 ## Project Description
 This pipeline builds various predictive models designed to classify subtypes of anemia 
 based on results from blood tests. If you are a reviewer not intending to execute the 

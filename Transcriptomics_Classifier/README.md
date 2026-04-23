@@ -9,7 +9,6 @@ on high-dimensional biological data.
 ## Author Information
 **Name**: Amanda Gale  
 **Institution**: Northeastern University  
-**Term**: Spring 2026
 
 ## Dataset Information
 ### Source
